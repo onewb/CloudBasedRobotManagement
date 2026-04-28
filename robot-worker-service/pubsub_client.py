@@ -25,7 +25,6 @@ class PubSubClient:
     # Publish telemetry
     def publish_telemetry(self, data):
         return self.publisher.publish(
-            self.telemetry_topic_path,
             json.dumps(data).encode("utf-8")
         )
 

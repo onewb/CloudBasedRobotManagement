@@ -1,3 +1,4 @@
+####### OLD SIMULATOR - NOT USED IN FINAL VERSION ########## LOCAL only
 import time
 import json
 import random
