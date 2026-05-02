@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: robot-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: robot-worker
+  template:
+    metadata:
+      labels:
+        app: robot-worker
+    spec:
+      serviceAccountName: robot-worker-sa
+      containers:
+      - name: worker
+        image: us-west1-docker.pkg.dev/cloud-based-robot-management/robot-repo/robot-worker:latest
+        imagePullPolicy: Always
+        env:
+          - name: ROBOT_ID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name

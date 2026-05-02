@@ -1,107 +1,88 @@
-#multi robot engine
-
+# multi robot worker simulator
 import json
+import os
 import time
 import random
 
 from robot_core import Robot
-from job_system import execute_job, assign_task, get_next_job
 from pubsub_client import PubSubClient
 
 
 class RobotWorker:
-    """
-    Single robot worker instance.
-    In Kubernetes, many pods run many workers OR 1 worker per pod.
-    """
-
-    def __init__(self, robot_id, pubsub: PubSubClient):
+    def __init__(self, robot_id, pubsub):
         self.robot = Robot(robot_id)
         self.pubsub = pubsub
 
-    # =========================
-    # MAIN WORK LOOP
-    # =========================
     def run_step(self):
-        """
-        One iteration of robot logic.
-        Called repeatedly instead of infinite thread loops.
-        """
-
-        self.robot.step()
-        execute_job(self.robot)
+        self.robot.run_step()
 
         telemetry = {
             "robot_id": self.robot.robot_id,
             "position": self.robot.position,
             "status": self.robot.status,
-            "battery": round(self.robot.battery, 2),
-            "crop": self.robot.crop_type,
-            "current_job": get_next_job(self.robot),
-            "field_location": self.robot.field_location
+            "job": self.robot.current_job,
+            "field_location": self.robot.field_location,
+            "crop_type": self.robot.crop_type,
+            "job_index": self.robot.current_job_index,
+            "job_progress": self.robot.job_progress,
         }
 
         self.pubsub.publish_telemetry(telemetry)
-
         print(f"[{self.robot.robot_id}] TELEMETRY → {telemetry}")
 
-    # =========================
-    # COMMAND HANDLER
-    # =========================
-    def handle_command(self, message):
-        try:
-            cmd = json.loads(message.data.decode())
+    def handle_command(self, cmd):
+        print("RAW CMD RECEIVED:", cmd)
 
-            if cmd.get("robot_id") != self.robot.robot_id:
-                message.ack()
-                return
+        if cmd["robot_id"] != self.robot.robot_id:
+            return
 
-            print(f"[{self.robot.robot_id}] COMMAND → {cmd}")
+        print(f"[{self.robot.robot_id}] COMMAND → {cmd}")
 
-            if cmd["type"] == "assign_greenhouse_task":
-                assign_task(self.robot, cmd["field_location"])
+        if cmd["type"] == "assign_greenhouse_task":
+            self.robot.set_task(
+                job_type="greenhouse_task",
+                field_location=cmd["field_location"]
+            )
 
-            elif cmd["type"] == "stop":
-                self.robot.task_active = False
-                self.robot.status = "idle"
+        elif cmd["type"] == "stop":
+            self.robot.clear_task()
 
-            message.ack()
-
-        except Exception as e:
-            print(f"[ERROR] {e}")
-            message.nack()
+        else:
+            print(f"[{self.robot.robot_id}] Unknown command type: {cmd['type']}")
 
 
-# =========================
-# WORKER PROCESS ENTRYPOINT
-# =========================
-def start_worker(robot_id=None, run_forever=True):
-    """
-    Kubernetes-safe worker entrypoint.
-    NO threading fleet simulation.
-    NO infinite multi-robot spawning.
-    """
-
+def start_worker(robot_id=None):
     pubsub = PubSubClient()
 
-    # If no robot_id provided, assign one worker identity
-    robot_id = robot_id or f"robot-{random.randint(1000,9999)}"
+    # Prefer env var for Kubernetes injection, then arg, then random
+    robot_id = robot_id or os.environ.get("ROBOT_ID") or f"robot-{random.randint(1000,9999)}"
 
     worker = RobotWorker(robot_id, pubsub)
 
     print(f"🤖 Worker started for {robot_id}")
+    print("📡 Listening for commands...")
 
-    # =========================
-    # SUBSCRIBE TO COMMANDS
-    # =========================
     def callback(message):
-        worker.handle_command(message)
+        try:
+            cmd = json.loads(message.data.decode("utf-8"))
+            worker.handle_command(cmd)
+        except Exception as e:
+            print(f"[{robot_id}] Bad message, skipping: {e}")
+        finally:
+            message.ack()  # Always ack — don't redeliver malformed messages
 
-    pubsub.subscribe_to_commands(callback)
+    future = pubsub.subscribe_to_commands(callback)
+    print("📡 Subscription future active:", future)
 
-    # =========================
-    # MAIN LOOP (controlled, safe for pods)
-    # =========================
-    while run_forever:
+    while True:
+        # Check subscription is still alive
+        if future.done():
+            print(f"[{robot_id}] ⚠️ Subscription died: {future.exception()}")
+            break
+
         worker.run_step()
-        time.sleep(2)
+        time.sleep(2)  # 2s loop — matches telemetry cadence, won't flood Pub/Sub
+
+
+if __name__ == "__main__":
+    start_worker()

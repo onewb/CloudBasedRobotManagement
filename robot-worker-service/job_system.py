@@ -61,6 +61,10 @@ def reconcile(robot):
         robot.task_active = False
         robot.current_job_index = 0
         robot.job_progress = 0
+        robot.current_job = None        # add this
+        robot.field_location = None     # add this
+        robot.target_position = None    # add this
+        robot.crop_type = None          # add this
         return
 
     job = JOBS[robot.current_job_index]
@@ -87,10 +91,35 @@ def reconcile(robot):
 
 def assign_task(robot, field_location):
     robot.field_location = field_location
-    robot.crop_type = get_crop_from_position(field_location)
-
+    robot.current_job = "greenhouse_task"
     robot.task_active = True
-    robot.current_job_index = 0
-    robot.job_progress = 0
-
     robot.status = "assigned"
+    from config import JOBS
+
+
+
+def execute_job(robot):
+    """
+    Worker-compatible execution wrapper
+    """
+    if not robot.task_active:
+        return
+
+    if robot.current_job == "greenhouse_task":
+        # simulate progress
+        robot.status = "working"
+
+        # simple completion condition
+        if robot.position == list(robot.field_location):
+            robot.task_active = False
+            robot.status = "completed"
+            robot.current_job = None
+
+
+def get_next_job(robot):
+    """
+    Return current job safely for telemetry
+    """
+    if robot.current_job_index < len(JOBS):
+        return JOBS[robot.current_job_index]
+    return None

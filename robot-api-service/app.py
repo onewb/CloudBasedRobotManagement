@@ -17,14 +17,15 @@ def health():
 def info():
     return jsonify(hostname=socket.gethostname())
 
-# Example command endpoint
+#  command endpoint
 @app.route("/command/<robot_id>")
 def send_command(robot_id):
     pubsub.publish_command({
         "robot_id": robot_id,
-        "type": "assign_greenhouse_task"
+        "type": "assign_greenhouse_task",
+        "field_location": [50, 50]   
     })
     return jsonify(status="sent")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080) 
+    app.run(host="0.0.0.0", port=8080, debug=False) 

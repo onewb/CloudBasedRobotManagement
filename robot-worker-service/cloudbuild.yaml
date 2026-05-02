@@ -1,0 +1,15 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-west1-docker.pkg.dev/cloud-based-robot-management/robot-repo/robot-worker:latest'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-west1-docker.pkg.dev/cloud-based-robot-management/robot-repo/robot-worker:latest'
+
+images:
+  - 'us-west1-docker.pkg.dev/cloud-based-robot-management/robot-repo/robot-worker:latest'
