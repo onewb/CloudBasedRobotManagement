@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetry-ingest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telemetry-ingest
+  template:
+    metadata:
+      labels:
+        app: telemetry-ingest
+    spec:
+      serviceAccountName: robot-worker-sa
+      containers:
+      - name: ingest
+        image: us-west1-docker.pkg.dev/cloud-based-robot-management/robot-repo/telemetry-ingest:latest
+        imagePullPolicy: Always
+        env:
+        - name: GCP_PROJECT_ID
+          value: cloud-based-robot-management

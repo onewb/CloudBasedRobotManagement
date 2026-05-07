@@ -60,3 +60,6 @@ It also listens for command messages such as:
   "position": [45, 78],
   "status": "moving"
 }
+
+gcloud pubsub topics publish robot-commands \
+  --message='{"robot_id": "YOUR_POD_NAME", "type": "start_field_scan"}'

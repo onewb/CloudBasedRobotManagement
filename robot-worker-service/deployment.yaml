@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: robot-worker
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: robot-worker
@@ -13,6 +13,7 @@ spec:
         app: robot-worker
     spec:
       serviceAccountName: robot-worker-sa
+      terminationGracePeriodSeconds: 30
       containers:
       - name: worker
         image: us-west1-docker.pkg.dev/cloud-based-robot-management/robot-repo/robot-worker:latest
@@ -22,3 +23,7 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.name
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "5"]

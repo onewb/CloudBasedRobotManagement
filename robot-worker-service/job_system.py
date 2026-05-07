@@ -1,4 +1,4 @@
-from config import JOBS
+from config import JOBS, GRID_MIN, GRID_MAX
 
 
 # =========================
@@ -26,50 +26,95 @@ def is_at_location(robot):
     )
 
 
+def get_next_scan_location(robot):
+    """
+    Returns the next [x, y] cell in the snake pattern.
+    Even x rows scan y forward (0→100), odd x rows scan y backward (100→0).
+    Returns None when the full grid is complete.
+    """
+    x, y = robot.scan_position
+    max_x = robot.scan_max_x  # each robot knows its own boundary
+
+    if x % 2 == 0:
+        next_y = y + 1
+        if next_y > GRID_MAX:
+            next_x = x + 1
+            next_y = GRID_MAX
+        else:
+            next_x = x
+    else:
+        next_y = y - 1
+        if next_y < GRID_MIN:
+            next_x = x + 1
+            next_y = GRID_MIN
+        else:
+            next_x = x
+
+    if next_x > max_x:
+        return None  # this robot's section complete
+
+    return [next_x, next_y]
+
+
 # =========================
 # STATE TRANSITION ENGINE
 # =========================
 
 def reconcile(robot):
-    """
-    Stateless-safe reconciliation step.
-    Designed for Pub/Sub-driven worker calls.
-    """
-
     # 1. No task
     if not robot.task_active:
         robot.status = "idle"
         return
 
-    # 2. Battery safety override
-    if robot.battery < 20:
-        robot.status = "charging"
-        return
-
-    # 3. Charging override
-    if robot.status == "charging":
-        return
-
-    # 4. Movement phase
+    # 2. Movement phase
     if not is_at_location(robot):
         robot.status = "moving_to_field"
         return
 
-    # 5. Job completion check
+    # 3. Job completion check
     if robot.current_job_index >= len(JOBS):
-        robot.status = "completed_cycle"
-        robot.task_active = False
+        if not robot.cycle_complete_pending:
+            # first step — broadcast completed_cycle, don't advance yet
+            robot.status = "completed_cycle"
+            robot.cycle_complete_pending = True
+            return
+        
+        # second step — now advance
+        robot.cycle_complete_pending = False
         robot.current_job_index = 0
         robot.job_progress = 0
-        robot.current_job = None        # add this
-        robot.field_location = None     # add this
-        robot.target_position = None    # add this
-        robot.crop_type = None          # add this
-        return
+        robot.crop_type = get_crop_from_position(robot.position)
 
+        if robot.scanning:
+            next_loc = get_next_scan_location(robot)
+            if next_loc is None:
+                robot.status = "scan_complete"
+                robot.task_active = False
+                robot.scanning = False
+                robot.current_job = None
+                robot.field_location = None
+                robot.target_position = None
+                robot.crop_type = None
+                robot.scan_position = None
+                print(f"[{robot.robot_id}] ✅ Full grid scan complete.")
+            else:
+                robot.scan_position = next_loc
+                robot.field_location = list(next_loc)
+                robot.target_position = list(next_loc)
+                robot.crop_type = get_crop_from_position(next_loc)
+                robot.status = "moving_to_field"
+                print(f"[{robot.robot_id}] 🔁 Next scan cell → {next_loc}")
+        else:
+            robot.status = "completed_cycle"
+            robot.task_active = False
+            robot.current_job = None
+            robot.field_location = None
+            robot.target_position = None
+            robot.crop_type = None
+        return
     job = JOBS[robot.current_job_index]
 
-    # 6. Execute job step
+    # 4. Execute job step
     robot.status = f"{job}_in_progress"
     robot.job_progress += 1
 
@@ -78,7 +123,6 @@ def reconcile(robot):
         f"({robot.job_progress}/3) crop={robot.crop_type}"
     )
 
-    # 7. Transition condition
     if robot.job_progress >= 3:
         print(f"[{robot.robot_id}] Job complete: {job}")
         robot.job_progress = 0
@@ -90,36 +134,50 @@ def reconcile(robot):
 # =========================
 
 def assign_task(robot, field_location):
-    robot.field_location = field_location
+    robot.field_location = list(field_location)
+    robot.target_position = list(field_location)
     robot.current_job = "greenhouse_task"
     robot.task_active = True
+    robot.scanning = False
     robot.status = "assigned"
-    from config import JOBS
 
 
-
-def execute_job(robot):
+def assign_field_scan(robot, start_x=0):
     """
-    Worker-compatible execution wrapper
+    Kick off a full 100x100 grid snake scan from [0,0].
     """
-    if not robot.task_active:
+    start = [start_x, GRID_MIN]
+    robot.scan_position = list(start)
+    robot.field_location = list(start)
+    robot.target_position = list(start)
+    robot.current_job = "field_scan"
+    robot.task_active = True
+    robot.scanning = True
+    robot.current_job_index = 0
+    robot.job_progress = 0
+    robot.crop_type = get_crop_from_position(start)
+    robot.status = "assigned"
+    print(f"[{robot.robot_id}] 🌱 Field scan started from {start}")
+
+def assign_crop_scan(robot, crop_type):
+    from config import CROP_ZONES
+
+    if crop_type not in CROP_ZONES:
+        print(f"[{robot.robot_id}] ❌ Unknown crop type: {crop_type}")
         return
 
-    if robot.current_job == "greenhouse_task":
-        # simulate progress
-        robot.status = "working"
+    zone = CROP_ZONES[crop_type]
+    start = [zone["min_x"], GRID_MIN]
 
-        # simple completion condition
-        if robot.position == list(robot.field_location):
-            robot.task_active = False
-            robot.status = "completed"
-            robot.current_job = None
-
-
-def get_next_job(robot):
-    """
-    Return current job safely for telemetry
-    """
-    if robot.current_job_index < len(JOBS):
-        return JOBS[robot.current_job_index]
-    return None
+    robot.scan_position = list(start)
+    robot.field_location = list(start)
+    robot.target_position = list(start)
+    robot.current_job = f"crop_scan_{crop_type}"
+    robot.task_active = True
+    robot.scanning = True
+    robot.scan_max_x = zone["max_x"]
+    robot.current_job_index = 0
+    robot.job_progress = 0
+    robot.crop_type = crop_type
+    robot.status = "assigned"
+    print(f"[{robot.robot_id}] 🌱 Crop scan started for {crop_type} from {start} to x={zone['max_x']}")

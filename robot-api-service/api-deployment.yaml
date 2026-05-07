@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: robot-api-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: robot-api
+  template:
+    metadata:
+      labels:
+        app: robot-api
+    spec:
+      containers:
+      - name: api
+        image: us-central1-docker.pkg.dev/cloud-based-robot-management/robot-repo/robot-api-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: GCP_PROJECT_ID
+          value: cloud-based-robot-management
