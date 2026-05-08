@@ -1,4 +1,7 @@
 # multi robot worker simulator
+# This simulator runs multiple robot workers in parallel threads, allowing you to test the behavior of multiple robots interacting with each other and the system. 
+# Each worker simulates a robot that listens for commands, updates its position and status in Firestore, and publishes telemetry data to Pub/Sub. 
+# The simulator can be used to validate the overall system behavior, including command handling, job execution, collision avoidance, and state management across multiple robots.
 import json
 import os
 import time
@@ -7,7 +10,6 @@ import random
 from robot_core import Robot
 from pubsub_client import PubSubClient
 from firestore_client import FirestoreClient
-from job_system import assign_field_scan
 from config import GRID_MAX
 from job_system import assign_field_scan, assign_crop_scan
 
@@ -17,9 +19,19 @@ class RobotWorker:
         self.robot = Robot(robot_id, firestore_client=firestore)
         self.pubsub = pubsub
         self.firestore = firestore
+        self.telemetry_count = 0
+        self.command_count = 0
+        self.throughput_start = time.time()
 
     def run_step(self):
         self.robot.run_step()
+        self.telemetry_count += 1
+
+        # print throughput every 20 messages
+        elapsed = time.time() - self.throughput_start
+        if self.telemetry_count % 20 == 0:
+            throughput = round(self.telemetry_count / elapsed, 2)
+            print(f"[{self.robot.robot_id}] 📊 Throughput: {throughput} telemetry/sec | total: {self.telemetry_count}")
 
         telemetry = {
             "robot_id": self.robot.robot_id,
@@ -38,12 +50,21 @@ class RobotWorker:
         print(f"[{self.robot.robot_id}] TELEMETRY → {telemetry}")
 
     def handle_command(self, cmd):
+        received_at = time.time()
         print("RAW CMD RECEIVED:", cmd)
 
         if cmd["robot_id"] != self.robot.robot_id and cmd["robot_id"] != "all":
             return
 
+        # calculate response time if sent_at present
+        sent_at = cmd.get("sent_at")
+        if sent_at:
+            latency_ms = round((received_at - sent_at) * 1000, 2)
+            print(f"[{self.robot.robot_id}] ⏱️ Command latency: {latency_ms}ms")
+
         print(f"[{self.robot.robot_id}] COMMAND → {cmd}")
+        self.command_count += 1
+        print(f"[{self.robot.robot_id}] 📨 Commands received so far: {self.command_count}")
 
         if cmd["type"] == "assign_greenhouse_task":
             self.robot.set_task(

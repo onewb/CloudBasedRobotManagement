@@ -5,12 +5,12 @@ import os
 
 class PubSubClient:
     def __init__(self):
-        self.project_id = os.getenv(
+        self.project_id = os.getenv(    # allow override via env var, default to cloud-based-robot-management (GCP ID)
             "GCP_PROJECT_ID",
             "cloud-based-robot-management"
         )
 
-        try:
+        try:                                                                # initialize Pub/Sub clients, handle exceptions gracefully 
             self.publisher = pubsub_v1.PublisherClient()
             self.subscriber = pubsub_v1.SubscriberClient()
         except Exception as e:
@@ -20,12 +20,12 @@ class PubSubClient:
 
         self.commands_topic_path = None
         if self.publisher:
-            self.commands_topic_path = self.publisher.topic_path(
+            self.commands_topic_path = self.publisher.topic_path(           #construct topic path for robot commands
                 self.project_id,
                 "robot-commands"
             )
 
-    def publish_command(self, data):
+    def publish_command(self, data):                                        # publish a command message to the robot-commands topic, handle uninitialized publisher gracefully
         if not self.publisher or not self.commands_topic_path:
             print("[WARN] PubSub not initialized. Skipping publish.")
             return None

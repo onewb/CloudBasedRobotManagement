@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
       - name: api
-        image: us-central1-docker.pkg.dev/cloud-based-robot-management/robot-repo/robot-api-service:latest
+        image: us-west1-docker.pkg.dev/cloud-based-robot-management/robot-repo/robot-api-service:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
         env:

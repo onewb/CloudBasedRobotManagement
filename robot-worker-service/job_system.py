@@ -1,11 +1,13 @@
 from config import JOBS, GRID_MIN, GRID_MAX
 
-
+# Job system for robot-worker-service, responsible for managing robot state transitions and task assignments based on current job progress and field location. 
+# Contains helper functions for determining crop types and scan locations, as well as the main reconcile function that implements the state transition logic.
+# Also includes task assignment functions for both specific field tasks and full grid scans
 # =========================
 # HELPERS
 # =========================
 
-def get_crop_from_position(position):
+def get_crop_from_position(position):           #determine crop type based on x coordinate of the position, using predefined zones (0-33 = tomatoes, 34-66 = cabbages, 67-100 = carrots)
     x, _ = position
 
     if 0 <= x <= 33:
@@ -16,7 +18,7 @@ def get_crop_from_position(position):
         return "carrots"
 
 
-def is_at_location(robot):
+def is_at_location(robot):                      #check if robot is within 1 unit of its target field location, return False if no target location is set
     if not robot.field_location:
         return False
 
@@ -26,7 +28,7 @@ def is_at_location(robot):
     )
 
 
-def get_next_scan_location(robot):
+def get_next_scan_location(robot):              # calculate the next cell in the snake pattern based on the robot's current scan position, alternating direction on each row, and respecting the robots assigned max_x boundary. Returns none if the scan is complete.
     """
     Returns the next [x, y] cell in the snake pattern.
     Even x rows scan y forward (0→100), odd x rows scan y backward (100→0).
@@ -60,7 +62,7 @@ def get_next_scan_location(robot):
 # STATE TRANSITION ENGINE
 # =========================
 
-def reconcile(robot):
+def reconcile(robot):                       # main state transition function, called on every position update from the robot. Determines what the robot's next status and actions should be based on its current job, progress, and location. Handles movement towards field locations, execution of job steps, and completion of tasks including full grid scans.
     # 1. No task
     if not robot.task_active:
         robot.status = "idle"
@@ -133,7 +135,7 @@ def reconcile(robot):
 # TASK ASSIGNMENT
 # =========================
 
-def assign_task(robot, field_location):
+def assign_task(robot, field_location):             # assign a specific field task to the robot, setting its target location and job type. This is used for tasks like greenhouse assignments where the robot needs to go to a specific coordinate rather than performing a full grid scan.
     robot.field_location = list(field_location)
     robot.target_position = list(field_location)
     robot.current_job = "greenhouse_task"
@@ -142,7 +144,7 @@ def assign_task(robot, field_location):
     robot.status = "assigned"
 
 
-def assign_field_scan(robot, start_x=0):
+def assign_field_scan(robot, start_x=0):            # assign a full grid scan task to the robot, initializing its scan position and setting the appropriate job type. The robot will then autonomously move through the grid in a snake pattern, scanning each cell until it reaches its assigned max_x boundary.
     """
     Kick off a full 100x100 grid snake scan from [0,0].
     """
@@ -159,7 +161,7 @@ def assign_field_scan(robot, start_x=0):
     robot.status = "assigned"
     print(f"[{robot.robot_id}] 🌱 Field scan started from {start}")
 
-def assign_crop_scan(robot, crop_type):
+def assign_crop_scan(robot, crop_type):         # assign a crop-specific scan task to the robot, determining the appropriate starting location based on the crop type and initializing the robot's state for performing a snake pattern scan within that crop's zone.
     from config import CROP_ZONES
 
     if crop_type not in CROP_ZONES:
